@@ -1,0 +1,32 @@
+COLORS = {
+    "bg":             "#F0F4FF",
+    "sidebar":        "#1E40AF",
+    "sidebar_hover":  "#1D4ED8",
+    "primary":        "#2563EB",
+    "primary_hover":  "#1D4ED8",
+    "secondary":      "#DBEAFE",
+    "card":           "#FFFFFF",
+    "text":           "#1E293B",
+    "subtext":        "#64748B",
+    "border":         "#CBD5E1",
+    "success":        "#16A34A",
+    "warning":        "#D97706",
+    "error":          "#DC2626",
+    "table_header":   "#EFF6FF",
+    "table_row":      "#FFFFFF",
+    "table_alt":      "#F8FAFF",
+    "entry_bg":       "#FFFFFF",
+    "admin_top":      "#0F172A",
+    "admin_sidebar":  "#1E293B",
+    "admin_hover":    "#334155",
+}
+
+FONTS = {
+    "title":      ("Segoe UI", 22, "bold"),
+    "heading":    ("Segoe UI", 14, "bold"),
+    "subheading": ("Segoe UI", 11, "bold"),
+    "body":       ("Segoe UI", 10),
+    "small":      ("Segoe UI", 9),
+    "button":     ("Segoe UI", 10, "bold"),
+    "mono":       ("Consolas", 10),
+}
