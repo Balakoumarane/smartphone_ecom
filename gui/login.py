@@ -4,6 +4,7 @@ from gui.theme import COLORS, FONTS
 from data.store import Store
 from models.user import Customer
 from models.cart import Cart
+from data.store import Session
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -96,6 +97,10 @@ class _BaseLogin:
                                      "Your account has been deactivated.",
                                      parent=self.win)
                 return
+
+            # ✅ NEW: Store user in session
+            Session.login(user)
+
             self.win.destroy()
             if self.role == "customer":
                 from gui.customer_portal import CustomerPortal

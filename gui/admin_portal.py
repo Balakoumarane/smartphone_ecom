@@ -2,6 +2,9 @@ import tkinter as tk
 from tkinter import ttk, messagebox
 from gui.theme import COLORS, FONTS
 from models.smartphone import Smartphone
+from tkinter import messagebox
+from data.store import Session
+from gui.home import HomeWindow
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -25,6 +28,22 @@ class AdminPortal:
         sh = self.root.winfo_screenheight()
         self.root.geometry(f"{w}x{h}+{(sw - w) // 2}+{(sh - h) // 2}")
 
+    def logout(self):
+        confirm = messagebox.askyesno("Logout", "Are you sure you want to logout?")
+        if not confirm:
+            return
+
+        Session.logout()
+
+        # Save reference BEFORE destroying
+        win = self.win if hasattr(self, "win") else self.root
+
+        # Schedule home window
+        win.after(100, HomeWindow)
+
+        # Destroy current window
+        win.destroy()
+
     # ── Shell (top-bar + sidebar + content) ───────────────────────────────────
     def _build_shell(self):
         # Top bar
@@ -41,6 +60,17 @@ class AdminPortal:
 
         # Sidebar
         sidebar = tk.Frame(self.root, bg=COLORS["admin_sidebar"], width=190)
+        logout_btn = tk.Button(
+            sidebar,
+            text="🔓 Logout",
+            bg="red",
+            fg="white",
+            font=("Arial", 11, "bold"),
+            cursor="hand2",
+            command=self.logout
+        )
+        logout_btn.pack(side="bottom", pady=20, fill="x")
+        
         sidebar.pack(side="left", fill="y")
         sidebar.pack_propagate(False)
 

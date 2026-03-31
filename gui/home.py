@@ -5,7 +5,7 @@ from gui.theme import COLORS, FONTS
 class HomeWindow:
     def __init__(self):
         self.root = tk.Tk()
-        self.root.title("SmartShop — Smartphone E-Commerce & Billing")
+        self.root.title("SmartShop — Smartphone E-Commerce")
         self.root.geometry("820x560")
         self.root.configure(bg=COLORS["bg"])
         self.root.resizable(False, False)
@@ -47,9 +47,9 @@ class HomeWindow:
                      bg=COLORS["sidebar"], fg="#DBEAFE",
                      anchor="w").pack(fill="x", padx=50, pady=2)
 
-        tk.Label(left, text="Python  •  Tkinter  •  OOP",
-                 font=FONTS["small"], bg=COLORS["sidebar"],
-                 fg="#93C5FD").pack(side="bottom", pady=20)
+        #tk.Label(left, text="Python  •  Tkinter  •  OOP",
+        #         font=FONTS["small"], bg=COLORS["sidebar"],
+        #         fg="#93C5FD").pack(side="bottom", pady=20)
 
         # ── Right white panel ────────────────────────────────────────────────
         right = tk.Frame(self.root, bg=COLORS["bg"])
@@ -100,9 +100,9 @@ class HomeWindow:
         # Demo hint
         hint = ("Demo  ▸  Customer: arjun@email.com / pass123\n"
                 "          Admin:    admin@store.com / admin123")
-        tk.Label(right, text=hint,
-                 font=("Consolas", 8), bg=COLORS["bg"],
-                 fg="#94A3B8", justify="center").pack(side="bottom", pady=18)
+        #tk.Label(right, text=hint,
+        #         font=("Consolas", 8), bg=COLORS["bg"],
+        #         fg="#94A3B8", justify="center").pack(side="bottom", pady=18)
 
     # ── Open portals ─────────────────────────────────────────────────────────
     def _open_customer_login(self):

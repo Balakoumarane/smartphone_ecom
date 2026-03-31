@@ -4,6 +4,9 @@ from gui.theme import COLORS, FONTS
 from models.payment import Payment
 from models.invoice import Invoice
 from models.shipment import Shipment
+from data.store import Session
+from gui.home import HomeWindow
+from tkinter import messagebox
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -28,6 +31,24 @@ class CustomerPortal:
         sh = self.root.winfo_screenheight()
         self.root.geometry(f"{w}x{h}+{(sw - w) // 2}+{(sh - h) // 2}")
 
+    def logout(self):
+        confirm = messagebox.askyesno("Logout", "Are you sure?")
+        if not confirm:
+            return
+
+        # 1. Clear session
+        Session.logout()
+
+        # Save reference BEFORE destroying
+        win = self.win if hasattr(self, "win") else self.root
+
+        # Schedule home window
+        win.after(100, HomeWindow)
+
+        # Destroy current window
+        win.destroy()
+    
+
     def _build_shell(self):
         # Top bar
         topbar = tk.Frame(self.root, bg=COLORS["sidebar"], height=52)
@@ -44,6 +65,16 @@ class CustomerPortal:
 
         # Sidebar
         sidebar = tk.Frame(self.root, bg="#1E3A5F", width=175)
+        logout_btn = tk.Button(
+            sidebar,
+            text="🔓 Logout",
+            bg="red",
+            fg="white",
+            font=("Arial", 11, "bold"),
+            cursor="hand2",
+            command=self.logout
+        )
+        logout_btn.pack(side="bottom", pady=20, fill="x")
         sidebar.pack(side="left", fill="y")
         sidebar.pack_propagate(False)
 
@@ -214,7 +245,7 @@ class CustomerPortal:
             return
         win = tk.Toplevel(self.root)
         win.title(f"{phone.brand} {phone.model}")
-        win.geometry("400x430")
+        win.geometry("500x430")
         win.configure(bg=COLORS["bg"])
         win.grab_set()
 

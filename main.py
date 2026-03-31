@@ -5,7 +5,7 @@ Entry point — run this file to launch the application.
 
 Default credentials
 -------------------
-Customer : john@email.com  /  pass123
+Customer : arjun@email.com  /  pass123
 Admin    : admin@store.com /  admin123
 """
 

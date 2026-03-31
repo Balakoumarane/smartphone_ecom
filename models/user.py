@@ -1,4 +1,5 @@
 from datetime import date
+from utils.security import Security
 import uuid
 
 
@@ -8,13 +9,28 @@ class User:
         self.name = name
         self.email = email
         self.phone_number = phone_number
-        self.password = password
+        self.password = Security.hash_password(password)
         self.address = address
         self.account_status = "active"
         self.registration_date = date.today()
 
     def login(self, email, password):
-        return self.email == email and self.password == password
+        from utils.security import Security
+
+        if self.email != email:
+            return False
+
+        # Case 1: Already hashed (bcrypt passwords start with $2b$)
+        if self.password.startswith("$2b$"):
+            return Security.verify_password(password, self.password)
+
+        # Case 2: Old plain-text password
+        if self.password == password:
+            # Upgrade to hashed automatically
+            self.password = Security.hash_password(password)
+            return True
+
+        return False
 
     def logout(self):
         pass
@@ -25,10 +41,21 @@ class User:
         self.address = address
 
     def change_password(self, old_password, new_password):
-        if self.password == old_password:
-            self.password = new_password
-            return True
-        return False
+        from utils.security import Security
+
+        # Case 1: If password is hashed
+        if self.password.startswith("$2b$"):
+            valid = Security.verify_password(old_password, self.password)
+        else:
+            # Case 2: Old plain-text password (legacy support)
+            valid = (self.password == old_password)
+
+        if not valid:
+            return False
+
+        # Hash and store new password
+        self.password = Security.hash_password(new_password)
+        return True
 
     def get_user_details(self):
         return f"ID: {self.user_id} | Name: {self.name} | Email: {self.email}"
