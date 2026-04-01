@@ -67,6 +67,7 @@ class Customer(User):
         self.customer_id = self.user_id
         self.cart = None
         self.order_history = []
+        self.wishlist = []
         self.shipping_address = address
         self.loyalty_points = 0
 
@@ -101,6 +102,16 @@ class Customer(User):
 
     def view_orders(self):
         return self.order_history
+
+    def add_to_wishlist(self, phone):
+        if all(item.phone_id != phone.phone_id for item in self.wishlist):
+            self.wishlist.append(phone)
+
+    def remove_from_wishlist(self, phone_id):
+        self.wishlist = [item for item in self.wishlist if item.phone_id != phone_id]
+
+    def has_in_wishlist(self, phone_id):
+        return any(item.phone_id == phone_id for item in self.wishlist)
 
 
 class Admin(User):

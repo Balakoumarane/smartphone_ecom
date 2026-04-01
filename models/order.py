@@ -32,6 +32,10 @@ class Order:
         self.order_status = "Pending"
         self.shipping_address = customer.shipping_address
         self.total_amount = self.calculate_order_total()
+        self.loyalty_points_used = 0
+        self.loyalty_discount = 0.0
+        self.loyalty_points_earned = 0
+        self.loyalty_points_awarded = 0
         # Reduce stock
         for ci in cart_items:
             ci.smartphone.stock_quantity = max(0, ci.smartphone.stock_quantity - ci.quantity)
@@ -44,13 +48,31 @@ class Order:
         if status in self.STATUSES:
             self.order_status = status
 
+    def apply_loyalty_redemption(self, points_used, discount_amount):
+        self.loyalty_points_used = int(points_used)
+        self.loyalty_discount = round(float(discount_amount), 2)
+
+    def set_loyalty_earnings(self, points_earned):
+        self.loyalty_points_earned = int(points_earned)
+
+    def award_loyalty_points(self):
+        if self.loyalty_points_awarded or self.loyalty_points_earned <= 0:
+            return False
+        self.customer.loyalty_points += self.loyalty_points_earned
+        self.loyalty_points_awarded = 1
+        return True
+
     def cancel_order(self):
-        if self.order_status not in ["Shipped", "Delivered"]:
-            for item in self.order_items:
-                item.smartphone.stock_quantity += item.quantity
-            self.order_status = "Cancelled"
-            return True
-        return False
+        if self.order_status in ["Cancelled", "Shipped", "Delivered"]:
+            return False
+        for item in self.order_items:
+            item.smartphone.stock_quantity += item.quantity
+        if self.loyalty_points_used:
+            self.customer.loyalty_points += self.loyalty_points_used
+            self.loyalty_points_used = 0
+            self.loyalty_discount = 0.0
+        self.order_status = "Cancelled"
+        return True
 
     def get_order_details(self):
         sep = "-" * 44

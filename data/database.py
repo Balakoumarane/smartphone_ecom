@@ -1,4 +1,4 @@
-"""
+﻿"""
 data/database.py
 ================
 SQLite database layer for SmartShop.
@@ -55,6 +55,17 @@ class Database:
     def _q1(self, sql, params=()):
         """Query and return one row."""
         return self.conn.execute(sql, params).fetchone()
+
+    def _ensure_column(self, table_name, column_name, definition):
+        cols = {
+            row["name"]
+            for row in self.conn.execute(f"PRAGMA table_info({table_name})").fetchall()
+        }
+        if column_name not in cols:
+            self.conn.execute(
+                f"ALTER TABLE {table_name} ADD COLUMN {column_name} {definition}"
+            )
+            self.conn.commit()
 
     # ─────────────────────────────────────────────────────────────────────────
     #  TABLE CREATION
@@ -134,7 +145,11 @@ class Database:
                 order_date       TEXT,
                 order_status     TEXT DEFAULT 'Pending',
                 total_amount     REAL,
-                shipping_address TEXT
+                shipping_address TEXT,
+                loyalty_points_used INTEGER DEFAULT 0,
+                loyalty_discount REAL DEFAULT 0,
+                loyalty_points_earned INTEGER DEFAULT 0,
+                loyalty_points_awarded INTEGER DEFAULT 0
             )""",
 
             # ── Order Items ───────────────────────────────────────────────────
@@ -154,7 +169,20 @@ class Database:
                 payment_method        TEXT,
                 payment_status        TEXT DEFAULT 'Pending',
                 transaction_date      TEXT,
-                transaction_reference TEXT
+                transaction_reference TEXT,
+                gateway_name          TEXT DEFAULT '',
+                payment_details       TEXT DEFAULT '',
+                payment_note          TEXT DEFAULT '',
+                verification_status   TEXT DEFAULT 'Pending',
+                verified_by           TEXT DEFAULT '',
+                verified_at           TEXT DEFAULT '',
+                refund_status         TEXT DEFAULT 'Not Requested',
+                refund_method         TEXT DEFAULT '',
+                refund_details        TEXT DEFAULT '',
+                refund_requested_at   TEXT DEFAULT '',
+                refund_reference      TEXT DEFAULT '',
+                refund_processed_by   TEXT DEFAULT '',
+                refund_processed_at   TEXT DEFAULT ''
             )""",
 
             # ── Invoices ──────────────────────────────────────────────────────
@@ -176,10 +204,50 @@ class Database:
                 shipment_status    TEXT,
                 estimated_delivery TEXT
             )""",
+
+            # -- Wishlist --
+            """CREATE TABLE IF NOT EXISTS wishlists (
+                customer_id TEXT REFERENCES users(user_id) ON DELETE CASCADE,
+                phone_id    TEXT REFERENCES smartphones(phone_id) ON DELETE CASCADE,
+                added_date  TEXT,
+                PRIMARY KEY (customer_id, phone_id)
+            )""",
+
+            # -- Coupons --
+            """CREATE TABLE IF NOT EXISTS coupons (
+                coupon_id        TEXT PRIMARY KEY,
+                code             TEXT NOT NULL UNIQUE,
+                discount_percent REAL NOT NULL,
+                is_active        INTEGER DEFAULT 1,
+                created_date     TEXT
+            )""",
         ]
         for stmt in stmts:
             self.conn.execute(stmt)
         self.conn.commit()
+        for name, definition in [
+            ("loyalty_points_used", "INTEGER DEFAULT 0"),
+            ("loyalty_discount", "REAL DEFAULT 0"),
+            ("loyalty_points_earned", "INTEGER DEFAULT 0"),
+            ("loyalty_points_awarded", "INTEGER DEFAULT 0"),
+        ]:
+            self._ensure_column("orders", name, definition)
+        for name, definition in [
+            ("gateway_name", "TEXT DEFAULT ''"),
+            ("payment_details", "TEXT DEFAULT ''"),
+            ("payment_note", "TEXT DEFAULT ''"),
+            ("verification_status", "TEXT DEFAULT 'Pending'"),
+            ("verified_by", "TEXT DEFAULT ''"),
+            ("verified_at", "TEXT DEFAULT ''"),
+            ("refund_status", "TEXT DEFAULT 'Not Requested'"),
+            ("refund_method", "TEXT DEFAULT ''"),
+            ("refund_details", "TEXT DEFAULT ''"),
+            ("refund_requested_at", "TEXT DEFAULT ''"),
+            ("refund_reference", "TEXT DEFAULT ''"),
+            ("refund_processed_by", "TEXT DEFAULT ''"),
+            ("refund_processed_at", "TEXT DEFAULT ''"),
+        ]:
+            self._ensure_column("payments", name, definition)
 
     # ─────────────────────────────────────────────────────────────────────────
     #  SEED CHECK
@@ -254,6 +322,7 @@ class Database:
             (phone.stock_quantity, phone.phone_id))
 
     def delete_smartphone(self, phone_id):
+        self._ex("DELETE FROM wishlists WHERE phone_id=?", (phone_id,))
         self._ex("DELETE FROM category_phones WHERE phone_id=?", (phone_id,))
         self._ex("DELETE FROM smartphones WHERE phone_id=?", (phone_id,))
 
@@ -283,6 +352,46 @@ class Database:
             "SELECT phone_id FROM category_phones WHERE category_id=?",
             (category_id,))
         return [r["phone_id"] for r in rows]
+
+    def add_wishlist_item(self, customer_id, phone_id):
+        self._ex("""
+            INSERT OR IGNORE INTO wishlists (customer_id, phone_id, added_date)
+            VALUES (?,?,?)
+        """, (customer_id, phone_id, str(date.today())))
+
+    def remove_wishlist_item(self, customer_id, phone_id):
+        self._ex(
+            "DELETE FROM wishlists WHERE customer_id=? AND phone_id=?",
+            (customer_id, phone_id),
+        )
+
+    def load_wishlist_raw(self, customer_id):
+        return self._q(
+            "SELECT * FROM wishlists WHERE customer_id=? ORDER BY added_date DESC",
+            (customer_id,),
+        )
+
+    def save_coupon(self, coupon):
+        self._ex(
+            """
+            INSERT OR REPLACE INTO coupons
+              (coupon_id, code, discount_percent, is_active, created_date)
+            VALUES (?,?,?,?,?)
+            """,
+            (
+                coupon.coupon_id,
+                coupon.code,
+                coupon.discount_percent,
+                1 if coupon.is_active else 0,
+                str(coupon.created_date),
+            ),
+        )
+
+    def load_coupons_raw(self):
+        return self._q("SELECT * FROM coupons ORDER BY code ASC")
+
+    def delete_coupon(self, coupon_id):
+        self._ex("DELETE FROM coupons WHERE coupon_id=?", (coupon_id,))
 
     # ─────────────────────────────────────────────────────────────────────────
     #  CARTS
@@ -322,11 +431,14 @@ class Database:
         self._ex("""
             INSERT OR REPLACE INTO orders
               (order_id, customer_id, order_date, order_status,
-               total_amount, shipping_address)
-            VALUES (?,?,?,?,?,?)
+               total_amount, shipping_address, loyalty_points_used,
+               loyalty_discount, loyalty_points_earned, loyalty_points_awarded)
+            VALUES (?,?,?,?,?,?,?,?,?,?)
         """, (order.order_id, order.customer.user_id,
               str(order.order_date), order.order_status,
-              order.total_amount, order.shipping_address))
+              order.total_amount, order.shipping_address,
+              order.loyalty_points_used, order.loyalty_discount,
+              order.loyalty_points_earned, order.loyalty_points_awarded))
 
     def save_order_item(self, order_id, item):
         self._ex("""
@@ -338,8 +450,21 @@ class Database:
 
     def update_order_status(self, order):
         self._ex(
-            "UPDATE orders SET order_status=? WHERE order_id=?",
-            (order.order_status, order.order_id))
+            """
+            UPDATE orders
+            SET order_status=?, loyalty_points_used=?, loyalty_discount=?,
+                loyalty_points_earned=?, loyalty_points_awarded=?
+            WHERE order_id=?
+            """,
+            (
+                order.order_status,
+                order.loyalty_points_used,
+                order.loyalty_discount,
+                order.loyalty_points_earned,
+                order.loyalty_points_awarded,
+                order.order_id,
+            ),
+        )
 
     def load_orders_raw(self):
         return self._q("SELECT * FROM orders ORDER BY order_date ASC")
@@ -355,11 +480,21 @@ class Database:
         self._ex("""
             INSERT OR REPLACE INTO payments
               (payment_id, order_id, payment_method, payment_status,
-               transaction_date, transaction_reference)
-            VALUES (?,?,?,?,?,?)
+               transaction_date, transaction_reference, gateway_name,
+               payment_details, payment_note, verification_status,
+               verified_by, verified_at, refund_status, refund_method,
+               refund_details, refund_requested_at, refund_reference,
+               refund_processed_by, refund_processed_at)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
         """, (payment.payment_id, payment.order.order_id,
               payment.payment_method, payment.payment_status,
-              str(payment.transaction_date), payment.transaction_reference))
+              str(payment.transaction_date), payment.transaction_reference,
+              payment.gateway_name, payment.payment_details, payment.payment_note,
+              payment.verification_status, payment.verified_by,
+              payment.verified_at, payment.refund_status,
+              payment.refund_method, payment.refund_details,
+              payment.refund_requested_at, payment.refund_reference,
+              payment.refund_processed_by, payment.refund_processed_at))
 
     def load_payments_raw(self):
         return self._q("SELECT * FROM payments")
@@ -440,6 +575,15 @@ class Database:
             INSERT OR IGNORE INTO carts (cart_id, customer_id, created_date)
             VALUES (?,?,?)
         """, (cart_id, cust_id, str(_date.today())))
+
+        self._ex(
+            """
+            INSERT OR IGNORE INTO coupons
+              (coupon_id, code, discount_percent, is_active, created_date)
+            VALUES (?,?,?,?,?)
+            """,
+            ("DEFAULT10", "SAVE10", 10.0, 1, str(_date.today())),
+        )
 
         # ── Smartphones (39 real phones, INR) ─────────────────────────────────
         phones_data = [

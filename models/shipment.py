@@ -7,7 +7,7 @@ class Shipment:
     COURIERS = ["FedEx", "DHL", "UPS", "BlueDart", "Delhivery"]
     STATUSES = [
         "Order Placed", "Processing", "Dispatched",
-        "In Transit", "Out for Delivery", "Delivered"
+        "In Transit", "Out for Delivery", "Delivered", "Cancelled"
     ]
 
     def __init__(self, order):
@@ -27,9 +27,10 @@ class Shipment:
             self.shipment_status = status
 
     def track_shipment(self, tracking_number=None):
+        eta = self.estimated_delivery if self.shipment_status != "Cancelled" else "Cancelled"
         return (
             f"Tracking Number   : {self.tracking_number}\n"
             f"Courier           : {self.courier_name}\n"
             f"Current Status    : {self.shipment_status}\n"
-            f"Estimated Delivery: {self.estimated_delivery}"
+            f"Estimated Delivery: {eta}"
         )

@@ -12,21 +12,25 @@ A fully functional desktop e-commerce application built with **Python**, **Tkint
 - Search by name / filter by category
 - View detailed phone specifications
 - Add to cart, update quantities, remove items
-- Checkout with shipping address & payment method
-- Discount code support (`SAVE10` for 10% off)
-- Auto-generated invoice with tax (8%) calculation
+- Checkout with realistic payment simulation
+- UPI QR flow, card/net banking portal simulation, and COD pending collection
+- Admin-managed coupon code support with active/inactive control
+- Wishlist support for later purchases
+- Auto-generated invoice with tax (8%) calculation and PDF / PNG export
 - Shipment tracking with courier & tracking number
-- Order history with cancel support
-- Loyalty points system (₹100 spent = 1 point)
+- Order history with cancel, refund request, and invoice viewing
+- Loyalty points redemption by customer choice and award on delivery
 - Profile management & password change
 
 ### Admin Portal
 - Secure admin login (separate from customer)
 - Product Management — Add, Edit, Delete smartphones
-- Order Management — View all orders, update status
+- Order workspace with sidebar subtabs for Manage Orders and View Orders
+- Order Management — update status, verify payments, and process refunds
 - Customer Management — View all customers, toggle account status
+- Coupon Management — add, remove, and toggle coupons
 - Sales Report — KPIs, order breakdown, top-selling products
-- Export sales report as `.txt`
+- Export sales report as PDF / PNG
 
 ### Backend
 - **SQLite3** database — all data persists across sessions
@@ -43,6 +47,7 @@ A fully functional desktop e-commerce application built with **Python**, **Tkint
 | Language    | Python 3.x                                         |
 | GUI         | Tkinter (ttk)                                      |
 | Database    | SQLite3 (built-in)                                 |
+| Exporting   | Pillow (PDF / PNG document rendering)              |
 | OOP Concepts| Inheritance, Composition, Aggregation, Association |
 | Architecture| MVC-style separation                               |
 
@@ -62,14 +67,19 @@ smartshop_db/
 │   ├── smartphone.py        # Smartphone, Category
 │   ├── cart.py              # Cart, CartItem
 │   ├── order.py             # Order, OrderItem
+│   ├── coupon.py            # Coupon model
 │   ├── payment.py           # Payment
 │   ├── invoice.py           # Invoice / Bill
 │   ├── shipment.py          # Shipment
 │   └── report.py            # Report
+├── utils/
+│   ├── security.py          # Password hashing / verification
+│   └── document_export.py   # PDF / PNG export helpers
 └── gui/
     ├── theme.py             # Colors & fonts
     ├── home.py              # Home screen
     ├── login.py             # Login & Register windows
+    ├── payment_workflows.py # Payment, verification, refund dialogs
     ├── customer_portal.py   # Full customer UI
     └── admin_portal.py      # Full admin UI
 ```
@@ -80,7 +90,7 @@ smartshop_db/
 
 ### Prerequisites
 - Python 3.8 or higher
-- No external packages required — uses only Python standard library
+- Pillow library for PDF / PNG export
 
 ### Steps
 
@@ -89,7 +99,10 @@ smartshop_db/
 git clone https://github.com/Balakoumarane/smartphone_ecom.git
 cd smartphone_ecom
 
-# 2. Run the application
+# 2. Install dependency
+pip install Pillow
+
+# 3. Run the application
 python main.py
 ```
 

@@ -56,7 +56,9 @@ class Store:
     def _load(self):
         self._load_smartphones()
         self._load_categories()
+        self._load_coupons()
         self._load_users()          # also loads carts
+        self._load_wishlists()
         self._load_orders()
         self._load_payments()
         self._load_invoices()
@@ -103,6 +105,29 @@ class Store:
             cats.append(c)
         self.categories = cats
 
+    def _load_coupons(self):
+        from datetime import date
+        from models.coupon import Coupon
+
+        coupons = []
+        for r in self.db.load_coupons_raw():
+            coupon = _new(Coupon)
+            coupon.coupon_id = r["coupon_id"]
+            coupon.code = (r["code"] or "").upper()
+            coupon.discount_percent = r["discount_percent"] or 0.0
+            coupon.is_active = bool(r["is_active"])
+            coupon.created_date = date.fromisoformat(r["created_date"]) if r["created_date"] else date.today()
+            coupons.append(coupon)
+
+        self._coupons_by_id = {coupon.coupon_id: coupon for coupon in coupons}
+        self._coupons_by_code = {coupon.code: coupon for coupon in coupons}
+        self.coupons = DBList(coupons, self._on_coupon_append)
+
+    def _on_coupon_append(self, coupon):
+        self.db.save_coupon(coupon)
+        self._coupons_by_id[coupon.coupon_id] = coupon
+        self._coupons_by_code[coupon.code] = coupon
+
     # ── Users ─────────────────────────────────────────────────────────────────
     def _load_users(self):
         from models.user import Customer, Admin
@@ -139,6 +164,7 @@ class Store:
                 u.shipping_address = ex["shipping_address"] if ex else r["address"]
                 u.loyalty_points   = ex["loyalty_points"]   if ex else 0
                 u.order_history    = []
+                u.wishlist         = []
 
                 # Reconstruct cart
                 cart_row = self.db.load_cart_raw(u.user_id)
@@ -179,6 +205,17 @@ class Store:
         if isinstance(user, Customer) and user.cart:
             self.db.save_cart(user.cart)
 
+    def _load_wishlists(self):
+        from models.user import Customer
+        for user in self.users:
+            if not isinstance(user, Customer):
+                continue
+            user.wishlist = []
+            for row in self.db.load_wishlist_raw(user.user_id):
+                phone = self._phones_by_id.get(row["phone_id"])
+                if phone:
+                    user.wishlist.append(phone)
+
     # ── Orders ────────────────────────────────────────────────────────────────
     def _load_orders(self):
         from models.order import Order, OrderItem
@@ -196,6 +233,10 @@ class Store:
             o.order_status   = r["order_status"]
             o.total_amount   = r["total_amount"]
             o.shipping_address = r["shipping_address"]
+            o.loyalty_points_used = r["loyalty_points_used"] or 0
+            o.loyalty_discount = r["loyalty_discount"] or 0.0
+            o.loyalty_points_earned = r["loyalty_points_earned"] or 0
+            o.loyalty_points_awarded = r["loyalty_points_awarded"] or 0
             o.order_items    = []
 
             for oi_row in self.db.load_order_items_raw(o.order_id):
@@ -231,7 +272,6 @@ class Store:
     # ── Payments ──────────────────────────────────────────────────────────────
     def _load_payments(self):
         from models.payment import Payment
-        from datetime import date
         payments = []
         for r in self.db.load_payments_raw():
             order = self._orders_by_id.get(r["order_id"])
@@ -242,8 +282,21 @@ class Store:
             p.order                 = order
             p.payment_method        = r["payment_method"]
             p.payment_status        = r["payment_status"]
-            p.transaction_date      = date.fromisoformat(r["transaction_date"])
+            p.transaction_date      = r["transaction_date"]
             p.transaction_reference = r["transaction_reference"]
+            p.gateway_name          = r["gateway_name"] or ""
+            p.payment_details       = r["payment_details"] or ""
+            p.payment_note          = r["payment_note"] or ""
+            p.verification_status   = r["verification_status"] or "Pending"
+            p.verified_by           = r["verified_by"] or ""
+            p.verified_at           = r["verified_at"] or ""
+            p.refund_status         = r["refund_status"] or "Not Requested"
+            p.refund_method         = r["refund_method"] or ""
+            p.refund_details        = r["refund_details"] or ""
+            p.refund_requested_at   = r["refund_requested_at"] or ""
+            p.refund_reference      = r["refund_reference"] or ""
+            p.refund_processed_by   = r["refund_processed_by"] or ""
+            p.refund_processed_at   = r["refund_processed_at"] or ""
             payments.append(p)
         self.payments = DBList(payments, self.db.save_payment)
 
@@ -318,25 +371,76 @@ class Store:
         for cat in self.categories:
             cat.product_list = [p for p in cat.product_list
                                 if p.phone_id != phone_id]
+        for user in self.users:
+            if hasattr(user, "wishlist"):
+                user.wishlist = [p for p in user.wishlist if p.phone_id != phone_id]
 
     def save_shipment(self, shipment):
         """Persist shipment status change."""
         self.db.update_shipment(shipment)
+
+    def save_payment(self, payment):
+        """Persist payment creation or updates."""
+        if payment not in self.payments:
+            self.payments.append(payment)
+            return
+        self.db.save_payment(payment)
 
     def save_cart(self, customer):
         """Persist current cart items for a customer."""
         cart = customer.cart
         if not cart:
             return
+        self.db.save_cart(cart)
         self.db.clear_cart_items(customer.user_id)
         for item in cart.items:
             self.db.save_cart_item(cart.cart_id, item)
+
+    def add_to_wishlist(self, customer, phone):
+        if customer.has_in_wishlist(phone.phone_id):
+            return False
+        customer.add_to_wishlist(phone)
+        self.db.add_wishlist_item(customer.user_id, phone.phone_id)
+        return True
+
+    def remove_from_wishlist(self, customer, phone_id):
+        if not customer.has_in_wishlist(phone_id):
+            return False
+        customer.remove_from_wishlist(phone_id)
+        self.db.remove_wishlist_item(customer.user_id, phone_id)
+        return True
+
+    def save_coupon(self, coupon):
+        if coupon not in self.coupons:
+            self.coupons.append(coupon)
+            return
+        self.db.save_coupon(coupon)
+        self._coupons_by_id[coupon.coupon_id] = coupon
+        self._coupons_by_code[coupon.code] = coupon
+
+    def delete_coupon(self, coupon_id):
+        coupon = self._coupons_by_id.get(coupon_id)
+        if not coupon:
+            return False
+        self.db.delete_coupon(coupon_id)
+        remaining = [entry for entry in self.coupons if entry.coupon_id != coupon_id]
+        list.clear(self.coupons)
+        list.extend(self.coupons, remaining)
+        self._coupons_by_id.pop(coupon_id, None)
+        self._coupons_by_code.pop(coupon.code, None)
+        return True
+
+    def reload(self):
+        self._load()
 
     # ─────────────────────────────────────────────────────────────────────────
     #  LOOKUP HELPERS  (same interface as before)
     # ─────────────────────────────────────────────────────────────────────────
     def get_user_by_email(self, email):
         return next((u for u in self.users if u.email == email), None)
+
+    def get_user_by_id(self, user_id):
+        return self._users_by_id.get(user_id)
 
     def get_customer_by_email(self, email):
         from models.user import Customer
@@ -347,6 +451,27 @@ class Store:
         from models.user import Admin
         return next((u for u in self.users
                      if isinstance(u, Admin) and u.email == email), None)
+
+    def get_phone_by_id(self, phone_id):
+        return self._phones_by_id.get(phone_id)
+
+    def get_order_by_id(self, order_id):
+        return self._orders_by_id.get(order_id)
+
+    def get_payment_for_order(self, order_id):
+        return next((p for p in self.payments if p.order.order_id == order_id), None)
+
+    def get_coupon_by_id(self, coupon_id):
+        return self._coupons_by_id.get(coupon_id)
+
+    def get_coupon_by_code(self, code, active_only=False):
+        coupon = self._coupons_by_code.get(code.strip().upper())
+        if active_only and coupon and not coupon.is_active:
+            return None
+        return coupon
+
+    def get_active_coupons(self):
+        return [coupon for coupon in self.coupons if coupon.is_active]
 
 class Session:
     current_user = None
