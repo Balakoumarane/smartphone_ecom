@@ -202,7 +202,8 @@ class Database:
                 courier_name       TEXT,
                 tracking_number    TEXT,
                 shipment_status    TEXT,
-                estimated_delivery TEXT
+                estimated_delivery TEXT,
+                delivered_date     TEXT DEFAULT ''
             )""",
 
             # -- Wishlist --
@@ -248,6 +249,7 @@ class Database:
             ("refund_processed_at", "TEXT DEFAULT ''"),
         ]:
             self._ensure_column("payments", name, definition)
+        self._ensure_column("shipments", "delivered_date", "TEXT DEFAULT ''")
 
     # ─────────────────────────────────────────────────────────────────────────
     #  SEED CHECK
@@ -522,16 +524,27 @@ class Database:
         self._ex("""
             INSERT OR REPLACE INTO shipments
               (shipment_id, order_id, courier_name, tracking_number,
-               shipment_status, estimated_delivery)
-            VALUES (?,?,?,?,?,?)
+               shipment_status, estimated_delivery, delivered_date)
+            VALUES (?,?,?,?,?,?,?)
         """, (shipment.shipment_id, shipment.order.order_id,
               shipment.courier_name, shipment.tracking_number,
-              shipment.shipment_status, str(shipment.estimated_delivery)))
+              shipment.shipment_status, str(shipment.estimated_delivery),
+              str(shipment.delivered_date) if shipment.delivered_date else ""))
 
     def update_shipment(self, shipment):
         self._ex(
-            "UPDATE shipments SET shipment_status=? WHERE shipment_id=?",
-            (shipment.shipment_status, shipment.shipment_id))
+            """
+            UPDATE shipments
+            SET shipment_status=?, estimated_delivery=?, delivered_date=?
+            WHERE shipment_id=?
+            """,
+            (
+                shipment.shipment_status,
+                str(shipment.estimated_delivery),
+                str(shipment.delivered_date) if shipment.delivered_date else "",
+                shipment.shipment_id,
+            ),
+        )
 
     def load_shipments_raw(self):
         return self._q("SELECT * FROM shipments")

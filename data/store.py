@@ -335,6 +335,7 @@ class Store:
             s.tracking_number    = r["tracking_number"]
             s.shipment_status    = r["shipment_status"]
             s.estimated_delivery = date.fromisoformat(r["estimated_delivery"])
+            s.delivered_date     = date.fromisoformat(r["delivered_date"]) if r["delivered_date"] else None
             shipments.append(s)
         self.shipments = DBList(shipments, self.db.save_shipment)
 

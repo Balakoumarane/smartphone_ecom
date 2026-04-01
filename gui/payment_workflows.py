@@ -258,10 +258,10 @@ class UPIPaymentDialog(_BaseDialog):
 
 class CardPaymentDialog(_BaseDialog):
     def __init__(self, parent, amount, method):
-        super().__init__(parent, f"{method} Gateway", "430x520")
+        super().__init__(parent, f"{method} Gateway", "430x470")
         self.amount = amount
         self.method = method
-        self._vars = {key: tk.StringVar() for key in ["name", "card", "expiry", "cvv", "otp"]}
+        self._vars = {key: tk.StringVar() for key in ["name", "card", "expiry", "cvv"]}
         self._build()
 
     def _build(self):
@@ -275,10 +275,14 @@ class CardPaymentDialog(_BaseDialog):
         body.pack(fill="both", expand=True)
         tk.Label(
             body,
-            text=f"Pay {format_inr(self.amount)} using your {self.method.lower()} details.",
+            text=(
+                f"Pay {format_inr(self.amount)} using your {self.method.lower()} details.\n"
+                "After this step, you will verify a time-sensitive OTP on the next screen."
+            ),
             font=FONTS["body"],
             bg=COLORS["bg"],
             fg=COLORS["text"],
+            justify="left",
         ).pack(anchor="w", pady=(0, 12))
 
         fields = [
@@ -286,7 +290,6 @@ class CardPaymentDialog(_BaseDialog):
             ("Card Number", "card", False),
             ("Expiry (MM/YY)", "expiry", False),
             ("CVV", "cvv", True),
-            ("OTP", "otp", True),
         ]
         for label, key, masked in fields:
             tk.Label(body, text=label, font=FONTS["small"], bg=COLORS["bg"], fg=COLORS["text"]).pack(anchor="w", pady=(8, 2))
@@ -303,7 +306,7 @@ class CardPaymentDialog(_BaseDialog):
         actions.pack(fill="x", pady=18)
         tk.Button(
             actions,
-            text="Pay Securely",
+            text="Continue to OTP",
             font=FONTS["button"],
             bg=COLORS["success"],
             fg="white",
@@ -331,8 +334,7 @@ class CardPaymentDialog(_BaseDialog):
         card = self._vars["card"].get().strip().replace(" ", "")
         expiry = self._vars["expiry"].get().strip()
         cvv = self._vars["cvv"].get().strip()
-        otp = self._vars["otp"].get().strip()
-        if not name or not card or not expiry or not cvv or not otp:
+        if not name or not card or not expiry or not cvv:
             messagebox.showerror("Missing Details", "Enter every card field to continue.", parent=self.win)
             return
         if not card.isdigit() or len(card) != 16:
@@ -344,18 +346,171 @@ class CardPaymentDialog(_BaseDialog):
         if not cvv.isdigit() or len(cvv) != 3:
             messagebox.showerror("Invalid CVV", "Use a 3-digit CVV.", parent=self.win)
             return
+        gateway = "Razorpay Secure Gateway" if self.method == "Credit Card" else "BillDesk Card Gateway"
+        masked = f"**** **** **** {card[-4:]}"
+        otp_result = CardOTPDialog(self.win, self.amount, self.method, gateway, name, masked).show()
+        if otp_result is None:
+            return
+        self.result = {"gateway_name": gateway, **otp_result}
+        self.win.destroy()
+
+
+class CardOTPDialog(_BaseDialog):
+    def __init__(self, parent, amount, method, gateway_name, cardholder_name, masked_card):
+        super().__init__(parent, "OTP Verification", "430x410")
+        self.amount = amount
+        self.method = method
+        self.gateway_name = gateway_name
+        self.cardholder_name = cardholder_name
+        self.masked_card = masked_card
+        self._otp_var = tk.StringVar()
+        self._otp_hint_var = tk.StringVar()
+        self._timer_var = tk.StringVar()
+        self._timer_job = None
+        self._build()
+        self._send_new_otp()
+
+    def _build(self):
+        hdr = tk.Frame(self.win, bg=COLORS["admin_top"], height=62)
+        hdr.pack(fill="x")
+        hdr.pack_propagate(False)
+        tk.Label(hdr, text="OTP Verification", font=FONTS["heading"], bg=COLORS["admin_top"], fg="white").pack(expand=True)
+
+        body = tk.Frame(self.win, bg=COLORS["bg"], padx=24, pady=18)
+        body.pack(fill="both", expand=True)
+        tk.Label(
+            body,
+            text=(
+                f"Authorize {format_inr(self.amount)} for {self.masked_card}.\n"
+                "A time-sensitive OTP has been sent to the registered mobile number."
+            ),
+            font=FONTS["body"],
+            bg=COLORS["bg"],
+            fg=COLORS["text"],
+            justify="left",
+        ).pack(anchor="w", pady=(0, 12))
+
+        tk.Label(
+            body,
+            textvariable=self._timer_var,
+            font=FONTS["subheading"],
+            bg=COLORS["bg"],
+            fg=COLORS["warning"],
+        ).pack(anchor="w", pady=(0, 8))
+
+        tk.Label(
+            body,
+            textvariable=self._otp_hint_var,
+            font=FONTS["small"],
+            bg=COLORS["bg"],
+            fg=COLORS["subtext"],
+            justify="left",
+            wraplength=360,
+        ).pack(anchor="w", pady=(0, 10))
+
+        tk.Label(body, text="Enter OTP", font=FONTS["small"], bg=COLORS["bg"], fg=COLORS["text"]).pack(anchor="w", pady=(8, 2))
+        tk.Entry(
+            body,
+            textvariable=self._otp_var,
+            font=FONTS["body"],
+            relief="solid",
+            bd=1,
+            show="*",
+        ).pack(fill="x", ipady=5)
+
+        actions = tk.Frame(body, bg=COLORS["bg"])
+        actions.pack(fill="x", pady=18)
+        self._verify_btn = tk.Button(
+            actions,
+            text="Verify OTP",
+            font=FONTS["button"],
+            bg=COLORS["success"],
+            fg="white",
+            relief="flat",
+            padx=12,
+            pady=8,
+            cursor="hand2",
+            command=self._submit,
+        )
+        self._verify_btn.pack(side="left")
+        tk.Button(
+            actions,
+            text="Resend OTP",
+            font=FONTS["button"],
+            bg=COLORS["warning"],
+            fg="white",
+            relief="flat",
+            padx=12,
+            pady=8,
+            cursor="hand2",
+            command=self._send_new_otp,
+        ).pack(side="left", padx=8)
+        tk.Button(
+            actions,
+            text="Cancel",
+            font=FONTS["button"],
+            bg=COLORS["error"],
+            fg="white",
+            relief="flat",
+            padx=12,
+            pady=8,
+            cursor="hand2",
+            command=self._cancel,
+        ).pack(side="right")
+
+    def _send_new_otp(self):
+        self._otp_code = f"{random.randint(100000, 999999):06d}"
+        self._expires_at = datetime.now() + timedelta(seconds=75)
+        self._otp_var.set("")
+        self._verify_btn.config(state="normal")
+        self._otp_hint_var.set(
+            "Demo OTP sent to registered mobile for academic simulation.\n"
+            f"Use OTP: {self._otp_code}"
+        )
+        self._tick()
+
+    def _tick(self):
+        if self._timer_job:
+            self.win.after_cancel(self._timer_job)
+        remaining = int((self._expires_at - datetime.now()).total_seconds())
+        if remaining <= 0:
+            self._timer_var.set("OTP expired. Request a new OTP to continue.")
+            self._verify_btn.config(state="disabled")
+            self._timer_job = None
+            return
+        self._timer_var.set(f"OTP valid for {remaining} seconds")
+        self._timer_job = self.win.after(500, self._tick)
+
+    def _submit(self):
+        if datetime.now() >= self._expires_at:
+            messagebox.showerror("OTP Expired", "Request a new OTP and try again.", parent=self.win)
+            return
+        otp = self._otp_var.get().strip()
         if not otp.isdigit() or len(otp) != 6:
             messagebox.showerror("Invalid OTP", "Use the 6-digit OTP.", parent=self.win)
             return
-        gateway = "Razorpay Secure Gateway" if self.method == "Credit Card" else "BillDesk Card Gateway"
-        masked = f"**** **** **** {card[-4:]}"
+        if otp != self._otp_code:
+            messagebox.showerror("OTP Failed", "The entered OTP is incorrect.", parent=self.win)
+            return
         self.result = {
-            "gateway_name": gateway,
-            "payment_details": f"{self.method} {masked} approved for {name}. OTP challenge passed.",
+            "payment_details": (
+                f"{self.method} {self.masked_card} approved for {self.cardholder_name}. "
+                "OTP verified on the dedicated challenge screen."
+            ),
             "transaction_reference": f"CARD-{random.randint(100000, 999999)}",
-            "note": f"{self.method} charge captured through the mock {gateway}.",
+            "note": f"{self.method} charge captured through the mock {self.gateway_name}. Time-sensitive OTP verified.",
         }
+        self._cancel_timer()
         self.win.destroy()
+
+    def _cancel_timer(self):
+        if self._timer_job:
+            self.win.after_cancel(self._timer_job)
+            self._timer_job = None
+
+    def _cancel(self):
+        self._cancel_timer()
+        super()._cancel()
 
 
 class NetBankingDialog(_BaseDialog):
