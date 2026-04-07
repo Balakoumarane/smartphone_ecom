@@ -41,3 +41,4 @@ invoice_*.pdf
 invoice_*.png
 sales_report_*.pdf
 sales_report_*.png
+data/export_audit.log

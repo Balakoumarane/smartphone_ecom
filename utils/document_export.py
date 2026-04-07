@@ -1,4 +1,5 @@
 from pathlib import Path
+from datetime import datetime
 import os
 
 from PIL import Image, ImageDraw, ImageFont
@@ -111,6 +112,24 @@ def _save_document(image, output_path):
         raise ValueError("Please choose a .pdf or .png file.")
 
 
+def _write_export_audit(document_type, output_path, metadata):
+    log_path = Path(__file__).resolve().parent.parent / "data" / "export_audit.log"
+    handle = None
+    try:
+        handle = open(log_path, "a", encoding="utf-8")
+        details = " | ".join(f"{key}={value}" for key, value in metadata.items())
+        handle.write(
+            f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] "
+            f"{document_type} exported -> {output_path} | {details}\n"
+        )
+    except OSError:
+        # Exporting the main document should still succeed even if audit logging fails.
+        return
+    finally:
+        if handle is not None:
+            handle.close()
+
+
 def export_invoice_document(invoice, output_path):
     image = Image.new("RGB", (PAGE_WIDTH, PAGE_HEIGHT), COLORS["page"])
     draw = ImageDraw.Draw(image)
@@ -206,6 +225,15 @@ def export_invoice_document(invoice, output_path):
 
     final_height = min(max(footer_y + 110, 980), PAGE_HEIGHT)
     _save_document(image.crop((0, 0, PAGE_WIDTH, final_height)), output_path)
+    _write_export_audit(
+        "Invoice",
+        output_path,
+        {
+            "invoice_id": invoice.invoice_id,
+            "order_id": invoice.order.order_id,
+            "customer": invoice.order.customer.name,
+        },
+    )
 
 
 def export_sales_report_document(report, output_path):
@@ -240,7 +268,7 @@ def export_sales_report_document(report, output_path):
     stats = [
         ("Total Orders", str(report.total_orders), COLORS["primary"]),
         ("Active Revenue", _format_inr(report.total_sales), COLORS["success"]),
-        ("Average Order", _format_inr(report.total_sales / max(report.total_orders, 1)), "#0EA5E9"),
+        ("Average Order", _format_inr(report.average_order_value), "#0EA5E9"),
         ("Cancelled Orders", str(report.get_status_breakdown().get("Cancelled", 0)), COLORS["warning"]),
     ]
     for idx, (label, value, color) in enumerate(stats):
@@ -288,15 +316,27 @@ def export_sales_report_document(report, output_path):
         draw.text((right_x1 + 24, line_y), "No sales data available.", font=body_font, fill=COLORS["muted"])
 
     y = body_y + panel_height + 30
-    _draw_card(draw, MARGIN, y, PAGE_WIDTH - MARGIN, y + 150)
-    draw.text((MARGIN + 24, y + 20), "Notes", font=heading_font, fill=COLORS["text"])
     notes = [
         "Cancelled orders are excluded from active revenue.",
-        "Average order value is based on the total number of orders in the report.",
-        "This report is generated from the current SmartShop database snapshot.",
+        f"Median active order value: {_format_inr(report.median_order_value)}.",
+        f"Revenue spread (std. deviation): {_format_inr(report.revenue_std_dev)}.",
+        report.report_note,
     ]
+    note_line_height = 28
+    notes_card_height = 78 + max(len(notes), 1) * note_line_height + 18
+    _draw_card(draw, MARGIN, y, PAGE_WIDTH - MARGIN, y + notes_card_height)
+    draw.text((MARGIN + 24, y + 20), "Notes", font=heading_font, fill=COLORS["text"])
     for idx, note in enumerate(notes):
         draw.text((MARGIN + 24, y + 62 + idx * 28), f"- {note}", font=body_font, fill=COLORS["muted"])
 
-    final_height = min(max(y + 200, 980), PAGE_HEIGHT)
+    final_height = min(max(y + notes_card_height + 40, 980), PAGE_HEIGHT)
     _save_document(image.crop((0, 0, PAGE_WIDTH, final_height)), output_path)
+    _write_export_audit(
+        "Sales Report",
+        output_path,
+        {
+            "report_id": report.report_id,
+            "total_orders": report.total_orders,
+            "total_sales": report.total_sales,
+        },
+    )

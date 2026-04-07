@@ -918,15 +918,22 @@ class AdminPortal:
 
         tk.Label(frame, text="Sales Report", font=FONTS["heading"], bg=COLORS["bg"], fg=COLORS["text"]).pack(anchor="w", pady=(0, 14))
 
-        report = self.admin.generate_sales_report(self.store)
+        try:
+            report = self.admin.generate_sales_report(self.store)
+        except Exception as exc:
+            messagebox.showerror(
+                "Report Error",
+                f"Unable to generate the sales report.\n{exc}",
+                parent=self.root,
+            )
+            return
 
         cards = tk.Frame(frame, bg=COLORS["bg"])
         cards.pack(fill="x", pady=(0, 16))
-        avg = report.total_sales / max(report.total_orders, 1)
         card_data = [
             ("Total Orders", str(report.total_orders), COLORS["primary"]),
             ("Total Revenue", format_inr(report.total_sales), COLORS["success"]),
-            ("Avg Order Value", format_inr(avg), "#0EA5E9"),
+            ("Avg Order Value", format_inr(report.average_order_value), "#0EA5E9"),
             ("Customers", str(sum(1 for user in self.store.users if hasattr(user, "customer_id"))), COLORS["warning"]),
         ]
         for title, value, color in card_data:
@@ -934,6 +941,31 @@ class AdminPortal:
             card.pack(side="left", expand=True, fill="x", padx=(0, 10))
             tk.Label(card, text=value, font=("Segoe UI", 18, "bold"), bg=COLORS["card"], fg=color).pack()
             tk.Label(card, text=title, font=FONTS["small"], bg=COLORS["card"], fg=COLORS["subtext"]).pack()
+
+        analytics = tk.Frame(frame, bg=COLORS["secondary"], relief="solid", bd=1, padx=16, pady=10)
+        analytics.pack(fill="x", pady=(0, 14))
+        tk.Label(
+            analytics,
+            text=(
+                f"Median Order Value: {format_inr(report.median_order_value)}    "
+                f"Highest Active Order: {format_inr(report.highest_order_value)}    "
+                f"Revenue Std Dev: {format_inr(report.revenue_std_dev)}"
+            ),
+            font=FONTS["body"],
+            bg=COLORS["secondary"],
+            fg=COLORS["text"],
+            anchor="w",
+            justify="left",
+        ).pack(anchor="w")
+        tk.Label(
+            analytics,
+            text=report.report_note,
+            font=FONTS["small"],
+            bg=COLORS["secondary"],
+            fg=COLORS["subtext"],
+            anchor="w",
+            justify="left",
+        ).pack(anchor="w", pady=(4, 0))
 
         body = tk.Frame(frame, bg=COLORS["bg"])
         body.pack(fill="both", expand=True)
